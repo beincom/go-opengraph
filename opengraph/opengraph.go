@@ -75,15 +75,25 @@ func (og *OpenGraph) ProcessHTML(buffer io.Reader) error {
 			return z.Err()
 		case html.StartTagToken, html.SelfClosingTagToken, html.EndTagToken:
 			name, hasAttr := z.TagName()
-			if atom.Lookup(name) != atom.Meta || !hasAttr {
+			tagName := atom.Lookup(name)
+			if tagName != atom.Title && ((tagName != atom.Meta) || !hasAttr) {
 				continue
 			}
 			m := make(map[string]string)
+			m["-tag"] = tagName.String()
 			var key, val []byte
 			for hasAttr {
 				key, val, hasAttr = z.TagAttr()
 				m[atom.String(key)] = string(val)
 			}
+
+			if tagName == atom.Title && tt == html.StartTagToken {
+				tokenType := z.Next()
+				if tokenType == html.TextToken {
+					m["content"] = z.Token().Data
+				}
+			}
+
 			og.ProcessMeta(m)
 		}
 	}
@@ -106,7 +116,9 @@ func (og *OpenGraph) ensureHasMusic() {
 func (og *OpenGraph) ProcessMeta(metaAttrs map[string]string) {
 	switch metaAttrs["property"] {
 	case "og:description":
-		og.Description = metaAttrs["content"]
+		if metaAttrs["content"] != "" {
+			og.Description = metaAttrs["content"]
+		}
 	case "og:type":
 		og.Type = metaAttrs["content"]
 		switch og.Type {
@@ -242,6 +254,21 @@ func (og *OpenGraph) ProcessMeta(metaAttrs map[string]string) {
 			og.processBookMeta(metaAttrs)
 		} else if og.isProfile {
 			og.processProfileMeta(metaAttrs)
+		}
+	}
+
+	// Fallback to regular meta tags
+	switch metaAttrs["name"] {
+	case "description":
+		if og.Description == "" && metaAttrs["content"] != "" {
+			og.Description = metaAttrs["content"]
+		}
+	}
+
+	switch metaAttrs["-tag"] {
+	case "title":
+		if og.Title == "" && metaAttrs["content"] != "" {
+			og.Title = metaAttrs["content"]
 		}
 	}
 }
